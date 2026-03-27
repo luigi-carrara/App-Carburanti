@@ -9,12 +9,24 @@ import smtplib
 from email.mime.text import MIMEText
 import logging
 from logging.handlers import RotatingFileHandler
+import pytz
+import traceback
+import sys
 
 # =========================
-# CONFIGURAZIONE LOGGING (Con Rotazione)
+# CONFIGURAZIONE TIMEZONE
+# =========================
+italy_tz = pytz.timezone('Europe/Rome')
+
+
+def get_now_it():
+    return datetime.now(italy_tz)
+
+
+# =========================
+# CONFIGURAZIONE LOGGING
 # =========================
 log_filename = "import.main.log"
-# Rotazione: 10MB per file, tiene gli ultimi 5 backup
 log_handler = RotatingFileHandler(
     log_filename,
     maxBytes=10 * 1024 * 1024,
@@ -42,6 +54,7 @@ DATA_URL_DISTRIBUTORI = os.getenv("DATA_URL_DISTRIBUTORI")
 CSV_SEPARATOR = os.getenv("CSV_SEPARATOR", "|")
 CSV_ENCODING = os.getenv("CSV_ENCODING", "latin-1")
 GG_INACTIVE = int(os.getenv("GG_INACTIVE", 15))
+BACKUP_DIR = os.getenv("BACKUP_DIR", "backups")  # Cartella di backup
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
@@ -54,7 +67,7 @@ MAIL_ACTIVE = os.getenv("MAIL_ACTIVE") == "1"
 
 
 # =========================
-# FUNZIONI DATABASE & MANUTENZIONE
+# FUNZIONI DI SUPPORTO
 # =========================
 
 def get_db_connection(config):
@@ -62,7 +75,6 @@ def get_db_connection(config):
 
 
 def vacuum_db(config):
-    """Pulisce i residui fisici del DB (fuori dalla transazione)"""
     try:
         conn = psycopg2.connect(**config)
         conn.set_isolation_level(extensions.ISOLATION_LEVEL_AUTOCOMMIT)
@@ -76,10 +88,37 @@ def vacuum_db(config):
         logger.error(f"Errore durante VACUUM: {e}")
 
 
-def get_last_import_date(cursor):
-    cursor.execute("SELECT last_price_date FROM system_info WHERE id = 1")
-    result = cursor.fetchone()
-    return result[0] if result else None
+def save_backup(content, prefix):
+    """Salva il file scaricato nella cartella di backup con timestamp"""
+    if not os.path.exists(BACKUP_DIR):
+        os.makedirs(BACKUP_DIR)
+        logger.info(f"Creata cartella backup: {BACKUP_DIR}")
+
+    timestamp = get_now_it().strftime("%d%m%Y%H%M")
+    filename = f"{prefix}_{timestamp}.csv"
+    filepath = os.path.join(BACKUP_DIR, filename)
+
+    with open(filepath, "w", encoding=CSV_ENCODING) as f:
+        f.write(content)
+    logger.info(f"Backup salvato: {filepath}")
+
+
+def load_csv_with_date(url, backup_prefix):
+    headers = {"User-Agent": "Mozilla/5.0 CarburantiApp/4.0"}
+    res = requests.get(url, headers=headers, timeout=60)
+    if res.status_code != 200:
+        raise Exception(f"Errore Download: HTTP {res.status_code} su {url}")
+
+    # Salvataggio backup del file grezzo
+    save_backup(res.text, backup_prefix)
+
+    lines = res.text.splitlines()
+    if not lines:
+        raise Exception(f"File vuoto ricevuto da {url}")
+
+    d_str = lines[0].replace("Estrazione del ", "").strip() if "Estrazione del" in lines[0] else "2026-01-01"
+    df = pd.read_csv(pd.io.common.StringIO("\n".join(lines[1:])), sep=CSV_SEPARATOR, encoding=CSV_ENCODING)
+    return df, d_str
 
 
 # =========================
@@ -87,36 +126,37 @@ def get_last_import_date(cursor):
 # =========================
 
 def import_data():
-    start_time = datetime.now()
+    start_time = get_now_it()
     logger.info("==================================================")
-    logger.info(f"AVVIO IMPORTAZIONE IN DATA { str(datetime.now())} - Soglia inattività: {GG_INACTIVE}gg")
+    logger.info(f"AVVIO IMPORTAZIONE (Ora IT): {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     status = "SUCCESS"
     message = "Import completato correttamente"
     date_price, date_dist = "N/A", "N/A"
 
     try:
-        # 1. Download CSV
-        df_dist, date_dist = load_csv_with_date(DATA_URL_DISTRIBUTORI)
-        df_price, date_price = load_csv_with_date(DATA_URL_PREZZI)
+        # 1. Download CSV e Backup
+        df_dist, date_dist = load_csv_with_date(DATA_URL_DISTRIBUTORI, "dati_distributori")
+        df_price, date_price = load_csv_with_date(DATA_URL_PREZZI, "dati_prezzi")
         date_price_dt = datetime.strptime(date_price, "%Y-%m-%d")
 
         conn = get_db_connection(DB_CONFIG)
-        with conn:  # Gestione transazione atomica
-            with conn.cursor() as cursor:
 
+        with conn:  # Gestione transazione
+            with conn.cursor() as cursor:
                 # Check aggiornamento
-                last_import = get_last_import_date(cursor)
-                if last_import and last_import.date() == date_price_dt.date():
-                    logger.info("Dataset già aggiornato. Procedura interrotta.")
+                cursor.execute("SELECT last_price_date FROM system_info WHERE id = 1")
+                last_import = cursor.fetchone()
+                if last_import and last_import[0] and last_import[0].date() == date_price_dt.date():
+                    logger.info("Dataset già aggiornato nel DB. Procedura saltata.")
                     return
 
-                # 2. Import Distributori (PostGIS gestito da Python)
+                # 2. Import Distributori
                 logger.info(f"Elaborazione {len(df_dist)} distributori...")
                 for _, row in df_dist.iterrows():
                     upsert_distributor(cursor, row)
 
-                # 3. Import Prezzi
+                # 3. Import Prezzi (Resiliente a ID mancanti)
                 logger.info(f"Elaborazione {len(df_price)} prezzi...")
                 imported_ids = set()
                 for _, row in df_price.iterrows():
@@ -124,11 +164,12 @@ def import_data():
                     if did:
                         imported_ids.add(did)
 
-                # 4. Gestione is_active
+                # 4. Aggiornamento is_active
                 if imported_ids:
+                    logger.info(f"Attivazione di {len(imported_ids)} distributori con prezzi validi...")
                     cursor.execute("UPDATE distributors SET is_active = TRUE WHERE id = ANY(%s)", (list(imported_ids),))
 
-                logger.info(f"Esecuzione cleanup inattivi (>{GG_INACTIVE}gg)...")
+                # Cleanup inattivi
                 cursor.execute("""
                     UPDATE distributors 
                     SET is_active = FALSE 
@@ -143,59 +184,54 @@ def import_data():
                 cursor.execute("UPDATE system_info SET last_price_date = %s WHERE id = 1", (date_price_dt,))
 
         conn.close()
-        # 6. Manutenzione post-commit
         vacuum_db(DB_CONFIG)
 
     except Exception as e:
         status = "ERROR"
-        message = f"Errore Critico: {str(e)}"
+        error_trace = traceback.format_exc()
+        message = f"ERRORE CRITICO: {str(e)}\n\n{error_trace}"
         logger.error(message)
+        print(f"\nDEBUG ERRORE:\n{error_trace}")
 
     finally:
-        duration_sec = (datetime.now() - start_time).total_seconds()
+        end_time = get_now_it()
+        duration_sec = (end_time - start_time).total_seconds()
         if MAIL_ACTIVE:
             send_summary_email(status, start_time, date_price, date_dist, message, duration_sec)
-        logger.info(f"PROCEDURA TERMINATA ALLE {datetime.now()} IN: {duration_sec:.2f} secondi")
+        logger.info(f"PROCEDURA TERMINATA ALLE {end_time.strftime('%H:%M:%S')} IN: {duration_sec:.2f} secondi")
         logger.info("==================================================")
 
 
 # =========================
-# FUNZIONI DI SUPPORTO
+# FUNZIONI UPSERT
 # =========================
-
-def load_csv_with_date(url):
-    headers = {"User-Agent": "Mozilla/5.0 CarburantiApp/2.0"}
-    res = requests.get(url, headers=headers, timeout=60)
-    if res.status_code != 200:
-        raise Exception(f"HTTP {res.status_code} su {url}")
-
-    lines = res.text.splitlines()
-    d_str = lines[0].replace("Estrazione del ", "").strip() if "Estrazione del" in lines[0] else "2026-01-01"
-    df = pd.read_csv(pd.io.common.StringIO("\n".join(lines[1:])), sep=CSV_SEPARATOR, encoding=CSV_ENCODING)
-    return df, d_str
-
 
 def upsert_distributor(cursor, row):
     dist_id = int(row["idImpianto"])
-    lat = float(row["Latitudine"]) if pd.notna(row["Latitudine"]) else None
-    lon = float(row["Longitudine"]) if pd.notna(row["Longitudine"]) else None
+    try:
+        lat = float(row["Latitudine"]) if pd.notna(row["Latitudine"]) else None
+        lon = float(row["Longitudine"]) if pd.notna(row["Longitudine"]) else None
+    except:
+        lat, lon = None, None
 
-    # ST_MakePoint(LON, LAT) -> Nota: Lon prima di Lat in PostGIS
     cursor.execute("""
         INSERT INTO distributors (
             id, gestore, bandiera, tipo_impianto, nome_impianto, 
             indirizzo, comune, provincia, lat, lon, is_active, geom
         )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE, ST_SetSRID(ST_MakePoint(%s, %s), 4326))
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE, 
+            CASE WHEN %s IS NOT NULL AND %s IS NOT NULL 
+                 THEN ST_SetSRID(ST_MakePoint(%s, %s), 4326) 
+                 ELSE NULL END)
         ON CONFLICT (id) DO UPDATE SET
             gestore = EXCLUDED.gestore, 
             bandiera = EXCLUDED.bandiera, 
             is_active = TRUE, 
-            lat = COALESCE(distributors.lat, EXCLUDED.lat), 
-            lon = COALESCE(distributors.lon, EXCLUDED.lon),
-            geom = COALESCE(distributors.geom, ST_SetSRID(ST_MakePoint(EXCLUDED.lon, EXCLUDED.lat), 4326));
+            lat = COALESCE(EXCLUDED.lat, distributors.lat), 
+            lon = COALESCE(EXCLUDED.lon, distributors.lon),
+            geom = COALESCE(ST_SetSRID(ST_MakePoint(EXCLUDED.lon, EXCLUDED.lat), 4326), distributors.geom);
     """, (dist_id, row["Gestore"], row["Bandiera"], row["Tipo Impianto"], row["Nome Impianto"],
-          row["Indirizzo"], row["Comune"], row["Provincia"], lat, lon, lon, lat))
+          row["Indirizzo"], row["Comune"], row["Provincia"], lat, lon, lon, lat, lon, lat))
 
 
 def upsert_price_from_row(cursor, row):
@@ -205,19 +241,22 @@ def upsert_price_from_row(cursor, row):
 
     try:
         dt = datetime.strptime(row["dtComu"], "%d/%m/%Y %H:%M:%S")
+        # Inserimento condizionale: evita ForeignKeyViolation se il distributore non esiste
         cursor.execute("""
             INSERT INTO fuel_prices (distributor_id, fuel_type, price, is_self, updated_at)
-            VALUES (%s,%s,%s,%s,%s)
+            SELECT %s, %s, %s, %s, %s
+            WHERE EXISTS (SELECT 1 FROM distributors WHERE id = %s)
             ON CONFLICT (distributor_id, fuel_type, is_self) 
             DO UPDATE SET price = EXCLUDED.price, updated_at = EXCLUDED.updated_at;
-        """, (dist_id, fuel, float(row["prezzo"]), bool(int(row["isSelf"])), dt))
-        return dist_id
+        """, (dist_id, fuel, float(row["prezzo"]), bool(int(row["isSelf"])), dt, dist_id))
+
+        return dist_id if cursor.rowcount > 0 else None
     except:
         return None
 
 
 def normalize_fuel(fuel):
-    f = fuel.lower()
+    f = str(fuel).lower()
     if "benzina" in f: return "benzina"
     if "gasolio" in f or "diesel" in f: return "diesel"
     if "gpl" in f: return "gpl"
@@ -227,23 +266,18 @@ def normalize_fuel(fuel):
 
 def send_summary_email(status, start, d_price, d_dist, msg, sec):
     try:
-        end = datetime.now()
         sender = os.getenv("SENDER")
         receiver = os.getenv("RECEIVER")
-
         body = (
-            f"REPORT Import App Carburanti---\n"
+            f"--- REPORT IMPORT CARBURANTI ---\n"
             f"STATO: {status}\n"
-            f"Inizio: {start.strftime('%H:%M:%S')}\n"
-            f"Fine: {end.strftime('%H:%M:%S')}\n"
             f"DURATA: {sec:.2f} secondi\n\n"
             f"Data Ministero Prezzi: {d_price}\n"
             f"Data Ministero Distributori: {d_dist}\n\n"
-            f"DETTAGLIO:\n{msg}"
+            f"DETTAGLI:\n{msg}"
         )
-
         email = MIMEText(body)
-        email["Subject"] = f"REPORT Import App Carburanti {status} - {end.strftime('%d/%m/%Y')}"
+        email["Subject"] = f"App Carburanti {status} - {get_now_it().strftime('%d/%m/%Y')}"
         email["From"], email["To"] = sender, receiver
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
