@@ -155,10 +155,10 @@ def send_summary_email(status, start, d_price, d_dist, msg, sec, log_path):
     try:
         sender = os.getenv("SENDER")
         receiver = os.getenv("RECEIVER")
+        password = os.getenv("PASSWORD")
 
-        # Creazione messaggio Multipart
         email = MIMEMultipart()
-        email["Subject"] = f"REPORT IMPORT App Carburanti {status} - {get_now_it().strftime('%d/%m/%Y')}"
+        email["Subject"] = f"App Carburanti {status} - {get_now_it().strftime('%d/%m/%Y')}"
         email["From"], email["To"] = sender, receiver
 
         body = (
@@ -171,21 +171,26 @@ def send_summary_email(status, start, d_price, d_dist, msg, sec, log_path):
         )
         email.attach(MIMEText(body, 'plain'))
 
-        # Allegato Log
         if os.path.exists(log_path):
             with open(log_path, "rb") as attachment:
                 part = MIMEBase("application", "octet-stream")
                 part.set_payload(attachment.read())
                 encoders.encode_base64(part)
-                part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(log_path)}")
+                part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(log_path)}")
                 email.attach(part)
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
-            srv.login(sender, os.getenv("PASSWORD"))
+        # --- INVIO VIA PORTA 587 (STARTTLS) ---
+        logger.info(f"Tentativo invio email via porta 587...")
+
+        # Nota: usiamo SMTP() invece di SMTP_SSL() per la porta 587
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as srv:
+            srv.starttls()  # Questo attiva la crittografia sulla connessione aperta
+            srv.login(sender, password)
             srv.send_message(email)
-        logger.info("Email inviata con successo.")
+
+        logger.info("Email inviata con successo via porta 587!")
     except Exception as e:
-        logger.error(f"Invio mail fallito: {e}")
+        logger.error(f"Invio mail fallito (porta 587): {e}")
 
 
 # =========================
