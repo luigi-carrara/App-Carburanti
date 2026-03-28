@@ -37,6 +37,7 @@ if not os.path.exists(BACKUP_DIR):
 # Generiamo un nome file log unico per questa esecuzione
 current_timestamp = get_now_it().strftime("%d%m%Y_%H%M")
 log_filename = os.path.join(LOG_DIR, f"import_{current_timestamp}.log")
+log_filename_txt = os.path.join(LOG_DIR, f"import_{current_timestamp}.log")
 
 # =========================
 # CONFIGURAZIONE LOGGING
@@ -193,6 +194,51 @@ def send_summary_email(status, start, d_price, d_dist, msg, sec, log_path):
         logger.error(f"Invio mail fallito (porta 587): {e}")
 
 
+TELEGRAM_ACTIVE = os.getenv("TELEGRAM_ACTIVE") == "1"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+ENV = os.getenv("ENV")
+
+
+def send_telegram_report(status, duration, d_price, d_dist, message, log_path):
+    if not TELEGRAM_ACTIVE:
+        return
+
+    try:
+        # 1. Prepariamo il testo del messaggio
+        icon = "✅" if status == "SUCCESS" else "❌"
+        icon_env = "⛽" if ENV == "PROD" else "🛠️"
+        text = (
+            f"{icon} *REPORT IMPORT CARBURANTI*\n\n"
+            f"AMBIENTE: {ENV} {icon_env}\n\n"
+            f"*STATO:* {status}\n"
+            f"*DURATA:* {duration:.2f}s\n"
+            f"*Data Prezzi:* `{d_price}`\n"
+            f"*Data Distr:* `{d_dist}`\n\n"
+            f"_{message[:200]}..._"  # Tagliamo se il messaggio è troppo lungo
+        )
+
+        # 2. Invio Messaggio di Testo
+        url_msg = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": text,
+            "parse_mode": "Markdown"
+        }
+        requests.post(url_msg, data=data, timeout=20)
+
+        # 3. Invio File Log (se esiste)
+        if os.path.exists(log_path):
+            url_doc = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
+            with open(log_path, "rb") as f:
+                files = {"document": f}
+                requests.post(url_doc, data={"chat_id": TELEGRAM_CHAT_ID}, files=files, timeout=30)
+
+        logger.info("Report Telegram inviato con successo!")
+
+    except Exception as e:
+        logger.error(f"Invio Telegram fallito: {e}")
+
 # =========================
 # MAIN
 # =========================
@@ -240,6 +286,8 @@ def import_data():
         logger.error(message)
     finally:
         duration = (get_now_it() - start_time).total_seconds()
+        if TELEGRAM_ACTIVE:
+            send_telegram_report(status, duration, date_price, date_dist, message, log_filename_txt)
         if MAIL_ACTIVE:
             send_summary_email(status, start_time, date_price, date_dist, message, duration, log_filename)
         logger.info(f"FINE PROCEDURA IN {duration:.2f}s")
