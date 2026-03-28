@@ -3,6 +3,8 @@ import subprocess
 import sys
 from telebot import TeleBot, types  # Importiamo 'types' per i bottoni
 from dotenv import load_dotenv
+import json
+
 
 load_dotenv("config.env")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -52,14 +54,39 @@ def run_import(message):
 @bot.message_handler(func=lambda message: message.text == '🖥️ Stato Server')
 def server_status(message):
     if message.chat.id != ADMIN_ID: return
-    uptime = subprocess.check_output(["uptime", "-p"]).decode("utf-8")
-    # Aggiungi questo nel try per vedere la RAM su Linux
-    ram = subprocess.check_output(["free", "-h"]).decode("utf-8")
-    bot.send_message(ADMIN_ID, f"🧠 *Memoria RAM:*\n```\n{ram}\n```", parse_mode="Markdown")
-    bot.send_message(ADMIN_ID, f"🖥️ *Uptime Server:*\n{uptime}", parse_mode="Markdown")
 
+    try:
+        # 1. Recuperiamo l'Uptime del sistema
+        uptime = subprocess.check_output(["uptime", "-p"]).decode("utf-8").replace("up ", "")
 
-# Gestore per messaggi non riconosciuti (per non lasciare il bot muto)
+        # 2. Interroghiamo PM2 per lo stato dell'API
+        # Sostituisci 'carburanti-api' con il nome esatto che vedi in 'pm2 list'
+        api_process_name = "carburanti-api"
+        pm2_data = subprocess.check_output(["pm2", "jlist"]).decode("utf-8")
+        processes = json.loads(pm2_data)
+
+        # Cerchiamo il processo specifico
+        api_status = "OFFLINE 🔴"
+        for p in processes:
+            if p['name'] == api_process_name:
+                status = p['pm2_env']['status']
+                if status == 'online':
+                    api_status = "RUNNING 🟢"
+                break
+
+        # 3. Componiamo il messaggio finale
+        msg = (
+            f"🖥️ *INFO SERVER*\n"
+            f"⏱️ Uptime: `{uptime.strip()}`\n\n"
+            f"🔌 *SERVIZI:*\n"
+            f"🌐 API Backend: `{api_status}`\n"
+            f"🤖 Bot Control: `RUNNING 🟢`"  # Se stai leggendo questo, il bot è vivo!
+        )
+
+        bot.send_message(ADMIN_ID, msg, parse_mode="Markdown")
+
+    except Exception as e:
+        bot.send_message(ADMIN_ID, f"⚠️ *Errore Monitoraggio:*\n`{str(e)}`", parse_mode="Markdown")
 @bot.message_handler(func=lambda message: True)
 def echo_all(message):
     if message.chat.id == ADMIN_ID:
