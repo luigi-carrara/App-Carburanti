@@ -66,6 +66,7 @@ def server_status(message):
         except:
             ip_pubblico = "Non rilevabile"
 
+
         # 2. Info Sistema Operativo (Dinamico)
         os_name = platform.system() # Linux
         os_release = platform.release() # Versione Kernel
@@ -74,6 +75,14 @@ def server_status(message):
             distro = subprocess.check_output(["lsb_release", "-ds"]).decode("utf-8").strip()
         except:
             distro = platform.platform()
+
+        try:
+            dominio_info = socket.gethostbyaddr(ip_pubblico)
+            dominio = dominio_info[0]
+        except:
+            dominio = 'Non rilevabile'
+
+
 
         hostname = socket.gethostname()
 
@@ -102,6 +111,7 @@ def server_status(message):
             f"📊 SERVER STATUS: `ACTIVE 🟢` \n\n"
             f"🐧 OS: `{distro}`\n"
             f"⚙️ Kernel: `{os_release}`\n"
+            f"🌐 Dominio: `{dominio}`\n"
             f"🌍 IP: `{ip_pubblico}`\n"
             f"🏠 Host: `{hostname}`\n"
             
