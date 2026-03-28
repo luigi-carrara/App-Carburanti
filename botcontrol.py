@@ -6,7 +6,8 @@ import requests
 import psutil
 import shutil
 import json
-import platform  # <--- NUOVO IMPORT
+import platform
+import webbrowser
 from telebot import TeleBot, types
 from dotenv import load_dotenv
 
@@ -23,7 +24,8 @@ def main_keyboard():
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     btn_import = types.KeyboardButton('🚀 Avvia Importazione')
     btn_status = types.KeyboardButton('🖥️ Stato Server')
-    markup.add(btn_import, btn_status)
+    btn_test = types.KeyboardButton('Test Connessione')
+    markup.add(btn_import, btn_status, btn_test)
     return markup
 
 # --- COMANDI DI BENVENUTO ---
@@ -130,6 +132,21 @@ def server_status(message):
 
     except Exception as e:
         bot.send_message(ADMIN_ID, f"⚠️ *Errore Monitoraggio:*\n`{str(e)}`", parse_mode="Markdown")
+
+
+@bot.message_handler(func=lambda message: message.text == 'Esegui Test Connessione')
+def run_test(message):
+    if message.chat.id != ADMIN_ID: return
+    msg = ''
+    try:
+        urlToOpen = 'https://api.prezzicarburanti.app/distributors_type'
+        webbrowser.open(urlToOpen)
+        msg = 'Link aperto correttamente'
+    except:
+        msg = 'Impossibile aprire il link'
+    finally:
+        bot.send_message(ADMIN_ID, msg, parse_mode="Markdown")
+
 
 # --- GESTORE MESSAGGI GENERICI ---
 @bot.message_handler(func=lambda message: True)
