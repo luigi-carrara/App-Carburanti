@@ -28,7 +28,7 @@ async def get_distributor_type_list():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        query = "SELECT DISTINCT UPPER(bandiera) FROM public.distributors WHERE bandiera IS NOT NULL ORDER BY bandiera ASC"
+        query = "SELECT DISTINCT UPPER(bandiera) as bandiera FROM public.distributors WHERE bandiera IS NOT NULL ORDER BY bandiera ASC"
         cur.execute(query)
         rows = cur.fetchall()
         bandiere = [r['bandiera'] for r in rows]

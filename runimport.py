@@ -37,7 +37,8 @@ if not os.path.exists(BACKUP_DIR):
 # Generiamo un nome file log unico per questa esecuzione
 current_timestamp = get_now_it().strftime("%d%m%Y_%H%M")
 log_filename = os.path.join(LOG_DIR, f"import_{current_timestamp}.log")
-log_filename_txt = os.path.join(LOG_DIR, f"import_{current_timestamp}.log")
+
+
 
 # =========================
 # CONFIGURAZIONE LOGGING
@@ -69,6 +70,7 @@ DB_CONFIG = {
 }
 
 MAIL_ACTIVE = os.getenv("MAIL_ACTIVE") == "1"
+
 
 
 # =========================
@@ -162,6 +164,7 @@ def send_summary_email(status, start, d_price, d_dist, msg, sec, log_path):
         email["Subject"] = f"App Carburanti {status} - {get_now_it().strftime('%d/%m/%Y')}"
         email["From"], email["To"] = sender, receiver
 
+
         body = (
             f"--- REPORT IMPORT CARBURANTI ---\n"
             f"STATO: {status}\n"
@@ -204,6 +207,7 @@ def send_telegram_report(status, duration, d_price, d_dist, message, log_path):
     if not TELEGRAM_ACTIVE:
         return
 
+
     try:
         # 1. Prepariamo il testo del messaggio
         icon = "✅" if status == "SUCCESS" else "❌"
@@ -228,11 +232,19 @@ def send_telegram_report(status, duration, d_price, d_dist, message, log_path):
         requests.post(url_msg, data=data, timeout=20)
 
         # 3. Invio File Log (se esiste)
+        # 3. Invio File Log (se esiste)
+
+
+
+
+
         if os.path.exists(log_path):
             url_doc = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
             with open(log_path, "rb") as f:
-                files = {"document": f}
+                display_name = os.path.basename(log_path).replace(".log", ".txt")
+                files = {"document": (display_name, f)}
                 requests.post(url_doc, data={"chat_id": TELEGRAM_CHAT_ID}, files=files, timeout=30)
+
 
         logger.info("Report Telegram inviato con successo!")
 
@@ -249,6 +261,7 @@ def import_data():
     status, message = "SUCCESS", "Import completato"
     date_price, date_dist = "N/A", "N/A"
 
+
     try:
         df_dist, date_dist = load_csv_with_date(DATA_URL_DISTRIBUTORI, "dati_distributori")
         df_price, date_price = load_csv_with_date(DATA_URL_PREZZI, "dati_prezzi")
@@ -262,7 +275,8 @@ def import_data():
                 if last_import and last_import[0] and last_import[0].date() == date_price_dt.date():
                     logger.info("Dataset già aggiornato. Fine.")
                     return
-
+                
+                
                 logger.info(f"Elaborazione distributori...")
                 for _, row in df_dist.iterrows(): upsert_distributor(cursor, row)
 
@@ -284,10 +298,11 @@ def import_data():
         status = "ERROR"
         message = f"ERRORE: {str(e)}\n{traceback.format_exc()}"
         logger.error(message)
+        
     finally:
         duration = (get_now_it() - start_time).total_seconds()
         if TELEGRAM_ACTIVE:
-            send_telegram_report(status, duration, date_price, date_dist, message, log_filename_txt)
+            send_telegram_report(status, duration, date_price, date_dist, message, log_filename)
         if MAIL_ACTIVE:
             send_summary_email(status, start_time, date_price, date_dist, message, duration, log_filename)
         logger.info(f"FINE PROCEDURA IN {duration:.2f}s")
