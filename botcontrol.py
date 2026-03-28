@@ -111,7 +111,7 @@ def server_status(message):
             f"📊 SERVER STATUS: `ACTIVE 🟢` \n\n"
             f"🐧 OS: `{distro}`\n"
             f"⚙️ Kernel: `{os_release}`\n"
-            f"🌐 Dominio: `{dominio}`\n"
+            f"🌐 Dominio: `{'prezzicarburanti.app'}`\n"
             f"🌍 IP: `{ip_pubblico}`\n"
             f"🏠 Host: `{hostname}`\n"
             
