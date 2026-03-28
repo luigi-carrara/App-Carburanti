@@ -134,7 +134,7 @@ def server_status(message):
         bot.send_message(ADMIN_ID, f"⚠️ *Errore Monitoraggio:*\n`{str(e)}`", parse_mode="Markdown")
 
 
-@bot.message_handler(func=lambda message: message.text == 'Esegui Test Connessione')
+@bot.message_handler(func=lambda message: message.text == 'Test Connessione')
 def run_test(message):
     if message.chat.id != ADMIN_ID: return
     msg = ''
