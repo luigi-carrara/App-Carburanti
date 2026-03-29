@@ -9,10 +9,8 @@ import json
 import platform
 import webbrowser
 from telebot import TeleBot, types
-import dotenv
 from dotenv import load_dotenv
 
-load_dotenv("config.env")
 
 # Caricamento configurazioni
 load_dotenv("config.env")
@@ -169,8 +167,8 @@ def run_test(message):
 def run_test_dati_min(message):
     if message.chat.id != ADMIN_ID: return
 
-    url_to_test1 = load_dotenv("DATA_URL_DISTRIBUTORI")
-    url_to_test2 = load_dotenv("DATA_URL_PREZZI")
+    url_to_test1 = os.getenv("DATA_URL_DISTRIBUTORI")
+    url_to_test2 = os.getenv("DATA_URL_PREZZI")
 
     try:
 
