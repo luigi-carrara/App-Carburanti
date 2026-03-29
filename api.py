@@ -9,7 +9,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
-# --- FIX PERCORSO CONFIG.ENV (Il problema della pull/PM2) ---
+# --- FIX PERCORSO CONFIG.ENV ---
 base_path = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(base_path, "config.env")
 load_dotenv(config_path)
@@ -19,16 +19,15 @@ SERVER_IP = os.getenv("SERVER_IP", "localhost")
 app = FastAPI()
 
 def get_db_connection():
-    # Se questi getenv tornano None, psycopg2 darà errore: controllali nei log!
     try:
         return psycopg2.connect(
             host=os.getenv("DB_HOST"),
             database=os.getenv("DB_NAME"),
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASSWORD"),
-            port=os.getenv("DB_PORT", "5432"), # Aggiunta porta default
+            port=os.getenv("DB_PORT", "5432"),
             cursor_factory=RealDictCursor,
-            connect_timeout=5 # Evita che l'API resti appesa se il DB è giù
+            connect_timeout=5
         )
     except Exception as e:
         print(f"❌ ERRORE CONNESSIONE DB: {e}")
@@ -87,8 +86,8 @@ async def search_distributori(
         comune: Optional[str] = None,
         bandiera: Optional[str] = None,
         ricerca: Optional[str] = None,
-        is_self: Optional[bool] = None,  # Filtro Self Service
-        prezzo_max: Optional[float] = None,  # Filtro Prezzo Massimo
+        is_self: Optional[bool] = None,
+        prezzo_max: Optional[float] = None,
         limit: int = 50
 ):
     if limit > 100:
@@ -97,11 +96,9 @@ async def search_distributori(
     conn = None
     try:
         conn = get_db_connection()
-        # Usiamo RealDictCursor se disponibile, altrimenti gestiamo le tuple
         cur = conn.cursor()
 
-        # Usiamo una Subquery (CTE) per prendere i distributori vicini
-        # e poi facciamo il JOIN con i prezzi per non appesantire il DB
+        # Usiamo la Primary Key (d.id) nel GROUP BY per permettere d.*
         query = """
             WITH dist_vicini AS (
                 SELECT *, 
@@ -117,7 +114,7 @@ async def search_distributori(
                     'price', p.price,
                     'is_self', p.is_self,
                     'updated_at', p.updated_at
-                )) as prezzi
+                )) FILTER (WHERE p.fuel_type IS NOT NULL) as prezzi
             FROM dist_vicini d
             LEFT JOIN public.fuel_prices p ON d.id = p.distributor_id
             WHERE 1=1
@@ -125,14 +122,11 @@ async def search_distributori(
 
         params = {'lat': lat, 'lon': lon, 'raggio': raggio}
 
-        # Gestione Case-Insensitive: ILIKE in PostgreSQL è già case-insensitive.
-        # Se vuoi essere super sicuro o indicizzare, puoi usare LOWER(colonna) = LOWER(%(valore)s)
         if comune:
             query += " AND d.comune ILIKE %(comune)s"
             params['comune'] = f"%{comune}%"
 
         if bandiera:
-            # Funzionerà sia con "TAMOIL" che "tamoil" grazie a ILIKE
             query += " AND d.bandiera ILIKE %(bandiera)s"
             params['bandiera'] = f"%{bandiera}%"
 
@@ -140,18 +134,16 @@ async def search_distributori(
             query += " AND (d.nome_impianto ILIKE %(ricerca)s OR d.indirizzo ILIKE %(ricerca)s)"
             params['ricerca'] = f"%{ricerca}%"
 
-        # Filtro Self Service
         if is_self is not None:
             query += " AND p.is_self = %(is_self)s"
             params['is_self'] = is_self
 
-        # Filtro Prezzo Massimo
         if prezzo_max is not None:
             query += " AND p.price <= %(prezzo_max)s"
             params['prezzo_max'] = prezzo_max
 
-        # Raggruppiamo per i campi del distributore per avere il json_agg dei prezzi
-        query += " GROUP BY d.id, d.nome_impianto, d.indirizzo, d.comune, d.bandiera, d.geom, d.is_active, d.distanza_metri"
+        # GROUP BY corretto: raggruppiamo per ID e per la distanza calcolata
+        query += " GROUP BY d.id, d.gestore, d.bandiera, d.tipo_impianto, d.nome_impianto, d.indirizzo, d.comune, d.provincia, d.lat, d.lon, d.is_active, d.geom, d.distanza_metri"
         query += " ORDER BY d.distanza_metri ASC LIMIT %(limit)s"
         params['limit'] = limit
 
