@@ -197,7 +197,7 @@ def run_test_dati_min(message):
 
         if response.status_code == 200:
             # Se risponde 200 OK, tutto è configurato a dovere (DNS, Nginx, SSL, FastAPI)
-            msg = "✅ *Connessione OK!*\nRisorsa " + url_to_test1 + " disponibile."
+            msg = "✅ *Connessione OK!*\nRisorsa " + url_to_test2 + " disponibile."
 
             # Aggiungiamo un bottone cliccabile per aprirlo TU dal TUO telefono
             markup = types.InlineKeyboardMarkup()
