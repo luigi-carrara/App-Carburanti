@@ -87,6 +87,8 @@ async def search_distributori(
         comune: Optional[str] = None,
         bandiera: Optional[str] = None,
         ricerca: Optional[str] = None,
+        is_self: Optional[bool] = None,  # Filtro Self Service
+        prezzo_max: Optional[float] = None,  # Filtro Prezzo Massimo
         limit: int = 50
 ):
     if limit > 100:
@@ -95,45 +97,76 @@ async def search_distributori(
     conn = None
     try:
         conn = get_db_connection()
+        # Usiamo RealDictCursor se disponibile, altrimenti gestiamo le tuple
         cur = conn.cursor()
 
+        # Usiamo una Subquery (CTE) per prendere i distributori vicini
+        # e poi facciamo il JOIN con i prezzi per non appesantire il DB
         query = """
-            SELECT *, 
-            ST_Distance(geom, ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography) as distanza_metri
-            FROM public.distributors
-            WHERE is_active = true 
-            AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography, %(raggio)s)
+            WITH dist_vicini AS (
+                SELECT *, 
+                ST_Distance(geom, ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography) as distanza_metri
+                FROM public.distributors
+                WHERE is_active = true 
+                AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography, %(raggio)s)
+            )
+            SELECT 
+                d.*, 
+                json_agg(json_build_object(
+                    'fuel_type', p.fuel_type,
+                    'price', p.price,
+                    'is_self', p.is_self,
+                    'updated_at', p.updated_at
+                )) as prezzi
+            FROM dist_vicini d
+            LEFT JOIN public.fuel_prices p ON d.id = p.distributor_id
+            WHERE 1=1
         """
 
         params = {'lat': lat, 'lon': lon, 'raggio': raggio}
 
+        # Gestione Case-Insensitive: ILIKE in PostgreSQL è già case-insensitive.
+        # Se vuoi essere super sicuro o indicizzare, puoi usare LOWER(colonna) = LOWER(%(valore)s)
         if comune:
-            query += " AND comune ILIKE %(comune)s"
+            query += " AND d.comune ILIKE %(comune)s"
             params['comune'] = f"%{comune}%"
 
         if bandiera:
-            query += " AND bandiera ILIKE %(bandiera)s"
+            # Funzionerà sia con "TAMOIL" che "tamoil" grazie a ILIKE
+            query += " AND d.bandiera ILIKE %(bandiera)s"
             params['bandiera'] = f"%{bandiera}%"
 
         if ricerca:
-            query += " AND (nome_impianto ILIKE %(ricerca)s OR indirizzo ILIKE %(ricerca)s)"
+            query += " AND (d.nome_impianto ILIKE %(ricerca)s OR d.indirizzo ILIKE %(ricerca)s)"
             params['ricerca'] = f"%{ricerca}%"
 
-        query += " ORDER BY distanza_metri ASC LIMIT %(limit)s"
+        # Filtro Self Service
+        if is_self is not None:
+            query += " AND p.is_self = %(is_self)s"
+            params['is_self'] = is_self
+
+        # Filtro Prezzo Massimo
+        if prezzo_max is not None:
+            query += " AND p.price <= %(prezzo_max)s"
+            params['prezzo_max'] = prezzo_max
+
+        # Raggruppiamo per i campi del distributore per avere il json_agg dei prezzi
+        query += " GROUP BY d.id, d.nome_impianto, d.indirizzo, d.comune, d.bandiera, d.geom, d.is_active, d.distanza_metri"
+        query += " ORDER BY d.distanza_metri ASC LIMIT %(limit)s"
         params['limit'] = limit
 
         cur.execute(query, params)
         rows = cur.fetchall()
+
         return {
             "status": "success",
             "server": SERVER_IP,
-            "params": {"lat": lat, "lon": lon, "raggio": raggio},
-            "total": len(rows),
             "results": rows
         }
+
     except Exception as e:
         print(f"Errore Database: {e}")
-        raise HTTPException(status_code=500, detail="Errore interno al database")
+        raise HTTPException(status_code=500, detail=f"Errore interno: {str(e)}")
     finally:
         if conn:
             conn.close()
