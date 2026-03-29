@@ -95,12 +95,21 @@ def load_csv_with_date(url, backup_prefix):
     res = requests.get(url, headers=headers, timeout=60)
     if res.status_code != 200:
         raise Exception(f"Errore Download: HTTP {res.status_code}")
+
     save_backup(res.text, backup_prefix)
     lines = res.text.splitlines()
-    d_str = lines[0].replace("Estrazione del ", "").strip() if "Estrazione del" in lines[0] else "2026-01-01"
-    df = pd.read_csv(io.StringIO("\n".join(lines[1:])), sep=CSV_SEPARATOR, encoding=CSV_ENCODING)
-    return df, d_str
 
+    d_str = lines[0].replace("Estrazione del ", "").strip() if "Estrazione del" in lines[0] else "2026-01-01"
+
+    # AGGIUNTO: on_bad_lines='skip' e engine='c' (più veloce)
+    df = pd.read_csv(
+        io.StringIO("\n".join(lines[1:])),
+        sep=CSV_SEPARATOR,
+        encoding=CSV_ENCODING,
+        on_bad_lines='skip',
+        engine='c'
+    )
+    return df, d_str
 
 # =========================
 # LOGICA DB
@@ -210,7 +219,7 @@ def send_telegram_report(status, duration, d_price, d_dist, message, log_path):
 
     try:
         # 1. Prepariamo il testo del messaggio
-        icon = "✅" if status == "SUCCESS" else "❌"
+        icon = "✅" if 'SUCCESS' in status else "❌"
         icon_env = "⛽" if ENV == "PROD" else "🛠️"
         text = (
             f"{icon} *REPORT IMPORT CARBURANTI*\n\n"
@@ -274,6 +283,8 @@ def import_data():
                 last_import = cursor.fetchone()
                 if last_import and last_import[0] and last_import[0].date() == date_price_dt.date():
                     logger.info("Dataset già aggiornato. Fine.")
+                    if TELEGRAM_ACTIVE:
+                        send_telegram_report("SUCCESS | SKIPPED", 0, date_price, date_dist, 'Ultima importazione saltata. Dataset già aggiornato', '')
                     return
                 
                 
