@@ -9,7 +9,10 @@ import json
 import platform
 import webbrowser
 from telebot import TeleBot, types
+import dotenv
 from dotenv import load_dotenv
+
+load_dotenv("config.env")
 
 # Caricamento configurazioni
 load_dotenv("config.env")
@@ -25,7 +28,8 @@ def main_keyboard():
     btn_import = types.KeyboardButton('🚀 Avvia Importazione')
     btn_status = types.KeyboardButton('🖥️ Stato Server')
     btn_test = types.KeyboardButton('🔌 Test Connessione')
-    markup.add(btn_import, btn_status, btn_test)
+    btn_ministero = types.KeyboardButton('🗄️ Test Dati Ministero')
+    markup.add(btn_import, btn_status, btn_test, btn_ministero)
     return markup
 
 # --- COMANDI DI BENVENUTO ---
@@ -159,6 +163,59 @@ def run_test(message):
 
     except Exception as e:
         bot.send_message(ADMIN_ID, f"❌ *Errore di Rete:* Impossibile raggiungere il dominio.\n`{str(e)[:100]}`")
+
+
+@bot.message_handler(func=lambda message: message.text == '🗄️ Test Dati Ministero')
+def run_test_dati_min(message):
+    if message.chat.id != ADMIN_ID: return
+
+    url_to_test1 = load_dotenv("DATA_URL_DISTRIBUTORI")
+    url_to_test2 = load_dotenv("DATA_URL_PREZZI")
+
+    try:
+
+        response = requests.get(url_to_test1, timeout=5)
+
+        if response.status_code == 200:
+            # Se risponde 200 OK, tutto è configurato a dovere (DNS, Nginx, SSL, FastAPI)
+            msg = "✅ *Connessione OK!*\nRisorsa " + url_to_test1 + " disponibile."
+
+            # Aggiungiamo un bottone cliccabile per aprirlo TU dal TUO telefono
+            markup = types.InlineKeyboardMarkup()
+            btn_web = types.InlineKeyboardButton("🌍 Apri nel Browser", url=url_to_test1)
+            markup.add(btn_web)
+
+            bot.send_message(ADMIN_ID, msg, parse_mode="Markdown", reply_markup=markup)
+        else:
+            bot.send_message(ADMIN_ID, f"⚠️ *Errore:* Il server ha risposto con codice `{response.status_code}`")
+
+    except Exception as e:
+        bot.send_message(ADMIN_ID, f"❌ *Errore di Rete:* Impossibile raggiungere il dominio.\n`{str(e)[:100]}`")
+
+
+    try:
+
+        response = requests.get(url_to_test2, timeout=5)
+
+        if response.status_code == 200:
+            # Se risponde 200 OK, tutto è configurato a dovere (DNS, Nginx, SSL, FastAPI)
+            msg = "✅ *Connessione OK!*\nRisorsa " + url_to_test1 + " disponibile."
+
+            # Aggiungiamo un bottone cliccabile per aprirlo TU dal TUO telefono
+            markup = types.InlineKeyboardMarkup()
+            btn_web = types.InlineKeyboardButton("🌍 Apri nel Browser", url=url_to_test2)
+            markup.add(btn_web)
+
+            bot.send_message(ADMIN_ID, msg, parse_mode="Markdown", reply_markup=markup)
+        else:
+            bot.send_message(ADMIN_ID, f"⚠️ *Errore:* Il server ha risposto con codice `{response.status_code}`")
+
+    except Exception as e:
+        bot.send_message(ADMIN_ID, f"❌ *Errore di Rete:* Impossibile raggiungere il dominio.\n`{str(e)[:100]}`")
+
+
+
+
 
 # --- GESTORE MESSAGGI GENERICI ---
 @bot.message_handler(func=lambda message: True)
