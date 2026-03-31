@@ -11,15 +11,13 @@ config_path = os.path.join(base_path, "config.env")
 load_dotenv(config_path)
 
 SERVER_IP = os.getenv("SERVER_IP", "localhost")
-API_KEY_EXPECTED = os.getenv("API_TOKEN", 'NULL')
 
 app = FastAPI(title="API Prezzi Carburanti Mugnano")
 
 
 # --- SICUREZZA (La Guardia) ---
 async def verify_api_key(x_api_key: str = Header(None, alias="X-API-KEY")):
-    print("header api key: "+ x_api_key + " | expected: " + API_KEY_EXPECTED)
-    print(API_KEY_EXPECTED)
+
     if x_api_key is None:
         raise HTTPException(status_code=401, detail="Header X-API-KEY mancante")
     if x_api_key != API_KEY_EXPECTED:
