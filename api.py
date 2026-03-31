@@ -11,6 +11,7 @@ config_path = os.path.join(base_path, "config.env")
 load_dotenv(config_path)
 
 SERVER_IP = os.getenv("SERVER_IP", "localhost")
+API_KEY_EXPECTED = os.getenv("API_TOKEN", 'NULL')
 
 app = FastAPI(title="API Prezzi Carburanti Mugnano")
 
