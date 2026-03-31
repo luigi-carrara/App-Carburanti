@@ -4,19 +4,25 @@ import sys
 import socket
 import json
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Header
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
+from fastapi import Depends
 
-# --- FIX PERCORSO CONFIG.ENV ---
+
 base_path = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(base_path, "config.env")
 load_dotenv(config_path)
 
 SERVER_IP = os.getenv("SERVER_IP", "localhost")
+API_KEY = os.getenv("API_TOKEN")
 
 app = FastAPI()
+
+def verify_api_key(x_api_key: str = Header(None)):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="API Key non valida")
 
 def get_db_connection():
     try:
@@ -35,7 +41,7 @@ def get_db_connection():
 
 # 1. ELENCO BANDIERE
 @app.get("/distributors_type")
-async def get_distributor_type_list():
+async def get_distributor_type_list(dep: None = Depends(verify_api_key)):
     conn = None
     try:
         conn = get_db_connection()
@@ -56,7 +62,8 @@ async def get_distributor_type_list():
 async def autosuggest(
         target: str = Query(..., description="Cerca in 'comune' o 'bandiera'"),
         q: str = Query(..., description="Testo digitato"),
-        limit: int = 10
+        limit: int = 10,
+        dep: None = Depends(verify_api_key)
 ):
     if target not in ["comune", "bandiera"]:
         raise HTTPException(status_code=400, detail="Target deve essere 'comune' o 'bandiera'")
@@ -88,7 +95,8 @@ async def search_distributori(
         ricerca: Optional[str] = None,
         is_self: Optional[bool] = None,
         prezzo_max: Optional[float] = None,
-        limit: int = 50
+        limit: int = 50,
+        dep: None = Depends(verify_api_key)
 ):
     if limit > 100:
         limit = 100
