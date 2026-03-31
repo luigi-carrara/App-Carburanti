@@ -18,6 +18,8 @@ app = FastAPI(title="API Prezzi Carburanti Mugnano")
 
 # --- SICUREZZA (La Guardia) ---
 async def verify_api_key(x_api_key: str = Header(None, alias="X-API-KEY")):
+    print(x_api_key)
+    print(API_KEY_EXPECTED)
     if x_api_key is None:
         raise HTTPException(status_code=401, detail="Header X-API-KEY mancante")
     if x_api_key != API_KEY_EXPECTED:
