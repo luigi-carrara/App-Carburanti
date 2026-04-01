@@ -151,7 +151,7 @@ async def get_fuel_type(
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        query = "select distinct UPPER(fuel_type) AS FT from fuel_prices ORDER BY FT ASC"
+        query = "select distinct UPPER(fuel_type) AS fuel_type from fuel_prices ORDER BY fuel_type ASC"
         cur.execute(query)
         fuels = [r['fuel_type'] for r in cur.fetchall()]
         return {"status": "success", "suggestions": fuels}
