@@ -145,8 +145,6 @@ async def search_distributori(
 async def get_fuel_type(
         token: str = Depends(verify_api_key)
 ):
-
-
     conn = None
     try:
         conn = get_db_connection()
@@ -154,7 +152,10 @@ async def get_fuel_type(
         query = "select distinct UPPER(fuel_type) AS fuel_type from fuel_prices ORDER BY fuel_type ASC"
         cur.execute(query)
 
-        fuels = [r['fuel_type'] for r in cur.fetchall()]
+        # MODIFICA QUI: Trasforma ogni stringa in un dizionario
+        # Prima: fuels = [r['fuel_type'] for r in cur.fetchall()]
+        fuels = [{"fuel_type": r['fuel_type']} for r in cur.fetchall()]
+
         return {"status": "success", "fuelTypeList": fuels}
     finally:
         if conn: conn.close()
