@@ -155,7 +155,7 @@ async def get_fuel_type(
         cur.execute(query)
 
         fuels = [r['fuel_type'] for r in cur.fetchall()]
-        return {"status": "success", "suggestions": fuels}
+        return {"status": "success", "fuelTypeList": fuels}
     finally:
         if conn: conn.close()
 
