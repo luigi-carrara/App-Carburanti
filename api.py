@@ -13,10 +13,9 @@ load_dotenv(config_path)
 SERVER_IP = os.getenv("SERVER_IP", "localhost")
 API_KEY_EXPECTED = os.getenv("API_TOKEN", 'NULL')
 
-app = FastAPI(title="API Prezzi Carburanti Mugnano")
+app = FastAPI(title="API Prezzi Carburanti")
 
 
-# --- SICUREZZA (La Guardia) ---
 async def verify_api_key(x_api_key: str = Header(None, alias="X-API-KEY")):
 
     if x_api_key is None:
