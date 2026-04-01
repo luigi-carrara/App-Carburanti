@@ -160,3 +160,22 @@ async def get_fuel_type(
     finally:
         if conn: conn.close()
 
+
+@app.get("/get_top10d")
+async def get_top10d(#Ottengo l'elenco deii 10 gestori con più pompe
+        token: str = Depends(verify_api_key)
+):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        query = "SELECT UPPER(bandiera) AS nome_brand, COUNT(*) AS conteggio FROM distributors GROUP BY UPPER(bandiera) ORDER BY conteggio DESC LIMIT 10"
+        cur.execute(query)
+
+
+        fuels = [{"bandiera": r['bandiera']} for r in cur.fetchall()]
+
+        return {"status": "success", "bandiera": fuels}
+    finally:
+        if conn: conn.close()
+
