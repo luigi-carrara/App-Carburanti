@@ -139,3 +139,22 @@ async def search_distributori(
         return {"status": "success", "results": cur.fetchall()}
     finally:
         if conn: conn.close()
+
+#Tipi carburanti (per popolare combobox)
+@app.get("/get_fuel_type")
+async def get_fuel_type(
+        token: str = Depends(verify_api_key)
+):
+
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        query = "select distinct UPPER(fuel_type) AS FT from fuel_prices ORDER BY FT ASC"
+        cur.execute(query)
+        fuels = [r['fuel_type'] for r in cur.fetchall()]
+        return {"status": "success", "suggestions": fuels}
+    finally:
+        if conn: conn.close()
+
