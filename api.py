@@ -121,7 +121,7 @@ async def search_distributori(
             query += " AND d.comune ILIKE %(comune)s";
             params['comune'] = f"%{comune}%"
         if bandiera:
-            query += " AND UPPER(d.bandiera) AS bandiera ILIKE %(bandiera)s";
+            query += " AND UPPER(d.bandiera) ILIKE %(bandiera)s";
             params['bandiera'] = f"%{bandiera}%"
         if ricerca:
             query += " AND (d.nome_impianto ILIKE %(ricerca)s OR d.indirizzo ILIKE %(ricerca)s)";
