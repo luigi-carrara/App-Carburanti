@@ -86,6 +86,7 @@ async def search_distributori(
         ricerca: Optional[str] = None,
         is_self: Optional[bool] = None,
         prezzo_max: Optional[float] = None,
+        fuel_type: Optional[str] = None,
         limit: int = 50,
         token: str = Depends(verify_api_key)
 ):
@@ -120,7 +121,7 @@ async def search_distributori(
             query += " AND d.comune ILIKE %(comune)s";
             params['comune'] = f"%{comune}%"
         if bandiera:
-            query += " AND d.bandiera ILIKE %(bandiera)s";
+            query += " AND UPPER(d.bandiera) AS bandiera ILIKE %(bandiera)s";
             params['bandiera'] = f"%{bandiera}%"
         if ricerca:
             query += " AND (d.nome_impianto ILIKE %(ricerca)s OR d.indirizzo ILIKE %(ricerca)s)";
@@ -131,6 +132,9 @@ async def search_distributori(
         if prezzo_max is not None:
             query += " AND p.price <= %(prezzo_max)s";
             params['prezzo_max'] = prezzo_max
+        if fuel_type is not None:
+            query += " AND UPPER(p.fuel_type) == %(fuel_type)s";
+            params['fuel_type'] = fuel_type
 
         query += " GROUP BY d.id, d.gestore, d.bandiera, d.tipo_impianto, d.nome_impianto, d.indirizzo, d.comune, d.provincia, d.lat, d.lon, d.is_active, d.geom, d.distanza_metri"
         query += " ORDER BY d.distanza_metri ASC LIMIT %(limit)s"
