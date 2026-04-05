@@ -142,7 +142,7 @@ def server_status(message):
 def run_test(message):
     if message.chat.id != ADMIN_ID: return
 
-    url_to_test = 'https://api.prezzicarburanti.app'
+    url_to_test = 'https://api.prezzicarburanti.app/docs'
 
     try:
         # Il bot "bussa" alla porta delle tue API
