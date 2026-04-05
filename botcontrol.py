@@ -1,15 +1,16 @@
-import os
 import subprocess
 import sys
 import socket
-import requests
 import psutil
 import shutil
 import json
 import platform
-import webbrowser
 from telebot import TeleBot, types
+import requests
+import os
+from fastapi import FastAPI, HTTPException, Query, Header, Depends
 from dotenv import load_dotenv
+
 
 
 # Caricamento configurazioni
@@ -17,6 +18,7 @@ load_dotenv("config.env")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_ID = int(os.getenv("TELEGRAM_CHAT_ID"))
 ENV = os.getenv("ENV", "LOCAL")
+API_KEY_EXPECTED = os.getenv("API_TOKEN", 'NULL')
 
 bot = TeleBot(TOKEN)
 
@@ -140,7 +142,7 @@ def server_status(message):
 def run_test(message):
     if message.chat.id != ADMIN_ID: return
 
-    url_to_test = 'https://api.prezzicarburanti.app/distributors_type'
+    url_to_test = 'https://api.prezzicarburanti.app'
 
     try:
         # Il bot "bussa" alla porta delle tue API
@@ -224,3 +226,11 @@ def echo_all(message):
 # Avvio del Bot
 print(f"Bot di controllo in ascolto...")
 bot.polling(none_stop=True)
+
+async def verify_api_key(x_api_key: str = Header(None, alias="X-API-KEY")):
+
+    if x_api_key is None:
+        raise HTTPException(status_code=401, detail="Header X-API-KEY mancante")
+    if x_api_key != API_KEY_EXPECTED:
+        raise HTTPException(status_code=401, detail="Accesso negato: Chiave non valida")
+    return x_api_key

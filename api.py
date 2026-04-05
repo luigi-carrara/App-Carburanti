@@ -109,7 +109,9 @@ async def search_distributori(
                     'fuel_type', p.fuel_type,
                     'price', p.price,
                     'is_self', p.is_self,
-                    'updated_at', p.updated_at
+                    'updated_at', p.updated_at,
+                    'price_trend', p.price_trend,
+                    'price_diff', p.price_diff
                 )) FILTER (WHERE p.fuel_type IS NOT NULL) as prezzi
             FROM dist_vicini d
             LEFT JOIN public.fuel_prices p ON d.id = p.distributor_id

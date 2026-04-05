@@ -116,6 +116,8 @@ def load_csv_with_date(url, backup_prefix):
 # =========================
 
 def upsert_distributor(cursor, row):
+
+
     dist_id = int(row["idImpianto"])
     try:
         lat = float(row["Latitudine"]) if pd.notna(row["Latitudine"]) else None
@@ -137,16 +139,34 @@ def upsert_distributor(cursor, row):
 def upsert_price_from_row(cursor, row):
     dist_id = int(row["idImpianto"])
     fuel = normalize_fuel(row["descCarburante"])
+
     if not fuel: return None
+
     try:
         dt = datetime.strptime(row["dtComu"], "%d/%m/%Y %H:%M:%S")
+        new_price = float(row["prezzo"])
+        is_self = bool(int(row["isSelf"]))
+
         cursor.execute("""
-            INSERT INTO fuel_prices (distributor_id, fuel_type, price, is_self, updated_at)
-            SELECT %s, %s, %s, %s, %s WHERE EXISTS (SELECT 1 FROM distributors WHERE id = %s)
-            ON CONFLICT (distributor_id, fuel_type, is_self) DO UPDATE SET price = EXCLUDED.price, updated_at = EXCLUDED.updated_at;
-        """, (dist_id, fuel, float(row["prezzo"]), bool(int(row["isSelf"])), dt, dist_id))
+            INSERT INTO fuel_prices (distributor_id, fuel_type, price, is_self, updated_at, price_trend, price_diff)
+            SELECT %s, %s, %s, %s, %s, 0, 0.000
+            WHERE EXISTS (SELECT 1 FROM distributors WHERE id = %s)
+            ON CONFLICT (distributor_id, fuel_type, is_self) 
+            DO UPDATE SET 
+                price_trend = CASE 
+                    WHEN EXCLUDED.price < fuel_prices.price THEN -1
+                    WHEN EXCLUDED.price > fuel_prices.price THEN 1
+                    ELSE 0
+                END,
+                -- CALCOLO DELLA DIFFERENZA: Nuovo prezzo - Vecchio prezzo
+                price_diff = EXCLUDED.price - fuel_prices.price,
+                price = EXCLUDED.price,
+                updated_at = EXCLUDED.updated_at;
+        """, (dist_id, fuel, new_price, is_self, dt, dist_id))
+
         return dist_id if cursor.rowcount > 0 else None
-    except:
+    except Exception as e:
+        print(f"Errore: {e}")
         return None
 
 
@@ -269,6 +289,7 @@ def import_data():
     logger.info(f"AVVIO IMPORTAZIONE: {start_time}")
     status, message = "SUCCESS", "Import completato"
     date_price, date_dist = "N/A", "N/A"
+
 
 
     try:
